@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?><metadata>
+    <idinfo>
+        <citation>
+            <citeinfo>
+                <title>CensusTracts2010</title>
+                <geoform>vector digital data</geoform>
+            </citeinfo>
+        </citation>
+        <descript>
+            <abstract>Census Tracts for State of Utah with population and housing unit counts</abstract>
+            <purpose>Demographic analysis</purpose>
+        </descript>
+        <spdom>
+            <bounding>
+                <westbc>-114.277016</westbc>
+                <eastbc>-108.899287</eastbc>
+                <northbc>42.034039</northbc>
+                <southbc>36.960010</southbc>
+            </bounding>
+        </spdom>
+        <keywords>
+            <theme>
+                <themekt>None</themekt>
+                <themekey>Demographic</themekey>
+                <themekey>SGID</themekey>
+                <themekey>AGRC</themekey>
+            </theme>
+        </keywords>
+        <accconst>None</accconst>
+        <useconst>None</useconst>
+        <native> Version 6.2 (Build 9200) ; Esri ArcGIS 10.5.1.7333</native>
+    </idinfo>
+    <spdoinfo>
+        <direct>Vector</direct>
+        <ptvctinf>
+            <sdtsterm>
+                <sdtstype>GT-polygon composed of chains</sdtstype>
+                <ptvctcnt>0</ptvctcnt>
+            </sdtsterm>
+        </ptvctinf>
+    </spdoinfo>
+    <eainfo>
+        <detailed>
+            <enttyp>
+                <enttypl>CensusTracts2010</enttypl>
+            </enttyp>
+            <attr>
+                <attrlabl>OBJECTID</attrlabl>
+                <attrdef>Internal feature number.</attrdef>
+                <attrdefs>ESRI</attrdefs>
+                <attrdomv>
+                                        
+                    
+                    <udom>Sequential unique whole numbers that are automatically generated.</udom>
+                                        
+                
+                </attrdomv>
+            </attr>
+            <attr>
+                <attrlabl>STATEFP10</attrlabl>
+                <attrdef>2010 Census state FIPS code</attrdef>
+                <attrdefs>http://www.census.gov/geo/www/tiger/tgrshp2010/TGRSHP10AA.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>COUNTYFP10</attrlabl>
+                <attrdef>2010 Census county FIPS code</attrdef>
+                <attrdefs>http://www.census.gov/geo/www/tiger/tgrshp2010/TGRSHP10AA.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>TRACTCE10</attrlabl>
+                <attrdef>2010 Census census tract code</attrdef>
+                <attrdefs>http://www.census.gov/geo/www/tiger/tgrshp2010/TGRSHP10AA.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>GEOID10</attrlabl>
+                <attrdef>Block identifier; a concatenation of 2010 Census state FIPS code, county FIPS Code, census tract code and tabulation block number</attrdef>
+                <attrdefs>http://www.census.gov/geo/www/tiger/tgrshp2010/TGRSHP10AA.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>NAME10</attrlabl>
+                <attrdef>
+2010 Census tabulation block name; a concatenation of 
+'Block' and the current tabulation block number</attrdef>
+                <attrdefs>http://www.census.gov/geo/www/tiger/tgrshp2010/TGRSHP10AA.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>FUNCSTAT10</attrlabl>
+                <attrdef>2010 Census functional status</attrdef>
+                <attrdefs>http://www.census.gov/geo/www/tiger/tgrshp2010/TGRSHP10AA.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>INTPTLAT10</attrlabl>
+                <attrdef> 2010 Census latitude of the internal point</attrdef>
+                <attrdefs>http://www.census.gov/geo/www/tiger/tgrshp2010/TGRSHP10AA.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>INTPTLON10</attrlabl>
+                <attrdef> 2010 Census longitude of the internal point</attrdef>
+                <attrdefs>http://www.census.gov/geo/www/tiger/tgrshp2010/TGRSHP10AA.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>LOGRECNO</attrlabl>
+                <attrdef>Logical Record Number</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>AREALAND</attrlabl>
+                <attrdef>Area (Land)</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>AREAWATR</attrlabl>
+                <attrdef>Area (water)</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>POP100</attrlabl>
+                <attrdef>Population Count (100%)</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>HU100</attrlabl>
+                <attrdef>Housing Unit Count (100%)</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>P0020001</attrlabl>
+                <attrdef> HISPANIC OR LATINO, AND NOT HISPANIC OR LATINO BY RACE Total</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>P0020002</attrlabl>
+                <attrdef>Hispanic or Latino</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>P0020003</attrlabl>
+                <attrdef>
+Not Hispanic or Latino</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>P0020004</attrlabl>
+                <attrdef>Population of one race</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>P0020005</attrlabl>
+                <attrdef>White alone</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>P0020006</attrlabl>
+                <attrdef>Black or African American alone</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>P0020007</attrlabl>
+                <attrdef>American Indian and Alaska Native alone</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>P0020008</attrlabl>
+                <attrdef>Asian alone</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>P0020009</attrlabl>
+                <attrdef>Native Hawaiian and Other Pacific Islander alone</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>P0020010</attrlabl>
+                <attrdef>Some Other Race alone</attrdef>
+                <attrdefs>http://www2.census.gov/census_2010/01-Redistricting_File--PL_94-171/0FILE_STRUCTURE.pdf</attrdefs>
+            </attr>
+            <attr>
+                <attrlabl>MTFCC</attrlabl>
+                <attrdef>
+MAF/TIGER Feature Class Cod</attrdef>
+            </attr>
+            <attr>
+                <attrlabl>P0010011</attrlabl>
+            </attr>
+            <attr>
+                <attrlabl>P0010012</attrlabl>
+            </attr>
+            <attr>
+                <attrlabl>P0010013</attrlabl>
+            </attr>
+            <attr>
+                <attrlabl>P0010014</attrlabl>
+            </attr>
+            <attr>
+                <attrlabl>SqMiles</attrlabl>
+            </attr>
+            <attr>
+                <attrlabl>SHAPE</attrlabl>
+                <attrdef>Feature geometry.</attrdef>
+                <attrdefs>ESRI</attrdefs>
+                <attrdomv>
+                                        
+                    
+                    <udom>Coordinates defining the features.</udom>
+                                        
+                
+                </attrdomv>
+            </attr>
+            <attr>
+                <attrlabl>Shape_Length</attrlabl>
+                <attrdef>Length of feature in internal units.</attrdef>
+                <attrdefs>Esri</attrdefs>
+                <attrdomv>
+                                        
+                    
+                    <udom>Positive real numbers that are automatically generated.</udom>
+                                        
+                
+                </attrdomv>
+            </attr>
+            <attr>
+                <attrlabl>Shape_Area</attrlabl>
+                <attrdef>Area of feature in internal units squared.</attrdef>
+                <attrdefs>Esri</attrdefs>
+                <attrdomv>
+                                        
+                    
+                    <udom>Positive real numbers that are automatically generated.</udom>
+                                        
+                
+                </attrdomv>
+            </attr>
+        </detailed>
+    </eainfo>
+    <distinfo>
+        <distliab>See access and use constraints information.</distliab>
+        <stdorder>
+            <digform>
+                <digtinfo>
+                    <formname>Feature Class</formname>
+                </digtinfo>
+                <digtopt/>
+            </digform>
+        </stdorder>
+    </distinfo>
+    <metainfo>
+        <metd>20191023</metd>
+        <metstdn>FGDC Content Standard for Digital Geospatial Metadata</metstdn>
+        <metstdv>FGDC-STD-001-1998</metstdv>
+        <mettc>local time</mettc>
+    </metainfo>
+</metadata>

@@ -1,0 +1,428 @@
+---
+title: 'STAT 651: Project'
+author: "Skyler Gray"
+date: "November 9, 2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(ggmap)
+library(tidyverse)
+library(lubridate)
+library(flextable)
+library(rstan)
+
+# Set random seed
+set.seed(1122)
+
+## Settings for Stan
+nCores <- parallel::detectCores() - 1
+options(mc.cores = nCores)          # Use all available cores.
+rstan_options(auto_write = TRUE)    # Cache compiled code.
+rstan_options(javascript=FALSE)     # FIXME: Effort to reduce RStudio Stan probs. May be helping.
+
+# Set ggplot theme
+mytheme <- theme_bw()
+theme_set(mytheme)
+```
+
+```{r read-data}
+covid <- read_csv('data/covid19_cases_saltlakecounty.csv')
+homeless <- read_csv('data/homeless_requests.csv',
+                     col_types = cols(district = col_character())) %>%
+  select(-date_closed) %>%
+  rename(date = date_created)
+pop_2019 <- read_csv('data/slc_population_2019_est_tracts.csv') %>%
+  select(-map_code)
+inc_2019 <- read_csv('data/slc_income_2019_est_tracts.csv') %>%
+  select(-map_code)
+# pop <- read_csv('data/slc_population_2019_est.csv',
+#                 col_types = cols(district = col_character()))
+
+combined <- homeless %>%
+  left_join(pop_2019, by = 'tract') %>%
+  left_join(inc_2019, by = 'tract') %>%
+  left_join(covid, by = 'date') %>%
+  mutate(has_income = ifelse(income <= 0, 0, 1),
+         logincome = ifelse(income <= 0, 0, log(income))) %>%
+  select(id, date, cases_avg7, has_income, district, 
+         tract, density, logincome, days_open)
+  
+
+# rm(covid, homeless, inc_2019, pop_2019)
+```
+
+
+# Exploratory Data Analysis
+
+```{r inside-analysis, eval=FALSE}
+# Sample size is not large enough to predict differences in neighborhoods
+homeless %>%
+  group_by(district, neighborhood) %>%
+  summarize(n = n(),
+            avg_date = mean(date),
+            min_date = min(date)) %>%
+  arrange(neighborhood) %>%
+  View()
+
+# Keep in districts
+homeless %>%
+  group_by(district) %>%
+  summarize(n = n(),
+            avg_date = mean(date),
+            min_date = min(date)) %>%
+  View()
+```
+
+
+```{r}
+# Add request locations on SLC map
+bb <- make_bbox(lon = long, lat = lat, data = homeless)
+mymap <- get_map(location = bb, zoom = 12,
+                 maptype = "hybrid", source = "google",
+                 color = 'bw')
+
+ggmap(mymap) + 
+  geom_point(data = homeless, 
+             aes(x = long, y = lat, col = district),
+             alpha = 1,
+             size = 2) +
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank()) +
+  scale_color_brewer(type = 'qual', palette = 2) +
+  labs(col = 'District',
+       title = paste0( 'Reports of homelessness concern since ',
+                       date(min(covid$date)) ))
+```
+
+
+```{r}
+combined %>%
+  group_by(district) %>%
+  summarize(n = n(),
+            days_open = mean(days_open))
+  # mutate(days_open_adj = days_open / (mean_density/1000))
+
+# Does it make more sense to divide by population or multiply by it?
+```
+
+```{r}
+combined %>%
+  ggplot(aes(days_open)) +
+  geom_density() +
+  labs(x = 'Days Open', y = 'Density')
+
+combined %>%
+  ggplot(aes(date, days_open)) +
+  geom_jitter(alpha = 0.5) +
+  labs(x = 'Date', y = 'Days Open')
+
+combined %>%
+  ggplot(aes(district, log(days_open))) +
+  geom_boxplot() +
+  labs(x = 'District', y = 'log(Days Open)')
+
+combined %>%
+  ggplot(aes(cases_avg7, log(days_open))) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = 'lm',
+              se = FALSE) +
+  labs(x = 'New COVID Cases (Rolling 7-Day Avg)',
+       y = 'log(Days Open)')
+
+combined %>%
+  ggplot(aes(logincome, log(days_open))) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = 'lm',
+              se = FALSE) +
+  labs(x = 'log(Income)', y = 'log(Days Open)')
+
+combined %>%
+  ggplot(aes(density, log(days_open))) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = 'lm',
+              se = FALSE) +
+  labs(x = 'Population Density (Pop per Sq. Mile)',
+       y = 'log(Days Open)')
+```
+
+```{r scale-data}
+X <- model.matrix(~ -1 + district + has_income + density + logincome + cases_avg7,
+                  data = combined)
+vars_scaled <- scale(X[,9:11])
+X[,9:11] <- vars_scaled
+y <- combined$days_open
+```
+
+
+
+# Fit Model: GLM
+
+```{r trad-glm-fit}
+fit <- glm(days_open ~ X - 1,
+           data = combined,
+           family = poisson)
+summary(fit)
+confint(fit) %>%
+  round(3)
+```
+
+
+
+
+# Fit Model: MCMC Metropolis Hastings
+
+```{r}
+loglike <- function(beta) {
+  sum( dpois(y, exp(X%*%beta), log = TRUE) )
+}
+logprior <- function(beta) {
+  mu_0 <- 0
+  tau2_0 <- 1/1000
+  
+  sum( dnorm(beta, mu_0, 1/tau2_0, log = TRUE) )
+}
+logpost <- function(beta) {
+  loglike(beta) + logprior(beta)
+}
+
+betahat <- optim(coef(fit), function(beta) -logpost(beta))
+logpost_max <- -betahat$value
+
+logpost_adj <- function(beta) {
+  # subtract maximum logpost value to stabilize computations
+  loglike(beta) + logprior(beta) - logpost_max
+}
+```
+
+```{r sample-slice}
+doit <- function(ndraws = 10000, width = rep(1, 11)) {
+  n_evals <- 0
+  f <- function(pars) {
+    n_evals <<- n_evals + 1
+    logpost_adj(pars)
+  }
+  draws <- matrix(0, nrow = ndraws, ncol = 11)
+  current <- coef(fit) # Start with GLM fit
+  f_current <- f(current)
+  
+  for (i in 1:ndraws) {
+    for (j in 1:11) {
+      # Slice sample beta1
+      y_slice <- log(runif(1, 0, exp(f_current)))
+      l <- current[j] - runif(1)*width[j]
+      l_prop <- current; l_prop[j] <- l
+      u <- l + width[j]
+      u_prop <- current; u_prop[j] <- u
+      
+      while (y_slice < f(l_prop)) {
+        l <- l - width[j]
+        l_prop[j] <- l
+      } 
+      while (y_slice < f(u_prop)) {
+        u <- u + width[j]
+        u_prop[j] <- u
+      }
+      while (TRUE) {
+        candidate <- runif(1, l, u)
+        cand_prop <- current; cand_prop[j] <- candidate
+        f_candidate <- f(cand_prop)
+        if (y_slice > f_candidate ) {
+          if ( candidate < current[j] ) l <- candidate
+          else u <- candidate
+        } else break
+      }
+      current[j] <- candidate
+      f_current <- f_candidate
+    }
+    draws[i,] <- current
+  }
+  
+  return(list(draws = draws,
+              evals_per_draw = n_evals/ndraws))
+}
+
+ndraws <- 1e3
+test <- doit(ndraws = ndraws, width = c(0.5, 11))
+
+ess <- floor( c(rep(ndraws, 6), 
+                as.numeric(coda::effectiveSize(test$draws[,7:8]))) )
+names(ess) <- c('Tau1', 'Tau2', 'Tau3', 'Tau4', 'Tau5', 'Tau6',
+                'a', 'b')
+
+cat('Effective Sample Sizes:\n')
+ess
+
+```
+
+
+```{r}
+ndraws <- 10000
+nbetas <- 11
+accept <- 0
+draws <- matrix(0, nrow = ndraws, ncol = nbetas)
+state <- rep(0.5, nbetas)
+for (i in 1:ndraws) {
+  proposal <- state + rnorm(nbetas, 0, 0.1)
+  metropolis <- logpost(proposal) - logpost(state)
+  if (log(runif(1)) < metropolis) {
+    draws[i,] <- proposal
+    state <- proposal
+    accept <- accept + 1
+  } else draws[i,] <- state
+}
+plot(draws[,4], type = 'l')
+accept
+coda::effectiveSize(draws)
+```
+
+
+
+
+# Fit Model: Stan
+
+```{r stan-data-model2}
+# Need
+# vector of sample sizes for all 7 districts
+# matrix (7 x maxN) of days open (RESPONSE VARIABLE)
+# matrix (7 x maxN) of 7-day rolling average of COVID cases
+
+# Sample sizes
+districtN <- homeless %>% 
+  group_by(district) %>% 
+  summarize(n = n()) %>%
+  pull(n)
+districts <- length(districtN)
+maxN <- max(districtN)
+
+# Response
+y <- homeless %>%
+  left_join(covid, by = 'date') %>%
+  arrange(district, date) %>%
+  group_by(district) %>%
+  mutate(obs_num = row_number()) %>%
+  ungroup() %>%
+  select(obs_num, district, days_open) %>%
+  pivot_wider(id_cols = c(obs_num, district),
+              names_from = obs_num,
+              values_from = days_open) %>%
+  select(-district) %>%
+  as.matrix()
+y[is.na(y)] <- 1e3
+
+# Covid cases
+x <- homeless %>%
+  left_join(covid, by = 'date') %>%
+  arrange(district, date) %>%
+  group_by(district) %>%
+  mutate(obs_num = row_number()) %>%
+  ungroup() %>%
+  select(obs_num, district, cases_avg7) %>%
+  pivot_wider(id_cols = c(obs_num, district),
+              names_from = obs_num,
+              values_from = cases_avg7) %>%
+  select(-district) %>%
+  as.matrix()
+x[is.na(x)] <- 1e3
+
+# Prior values
+mu_0 <- 0
+tau2_0 <- 1/100
+```
+
+```{r stan-data-model3}
+
+N <- nrow(homeless)
+districtN <- homeless %>% 
+  group_by(district) %>% 
+  summarize(n = n()) %>%
+  pull(n)
+districts <- length(districtN)
+
+# Response
+y <- homeless %>%
+  pull(days_open)
+
+# Covid cases
+x <- model.matrix(~ -1 + district + cases_avg7,
+             data = homeless %>%
+               left_join(covid, by = 'date'))
+
+# Prior values
+mu_0 <- 2
+tau2_0 <- 1/1000
+```
+
+
+```{r stan-fit}
+# Fit Stan model
+m <- stan_model(model_code = readLines("model3.stan"))
+data <- list(districts = districts,
+             N = N,
+             y = y, 
+             x = x,
+             mu_0 = mu_0,
+             tau2_0 = tau2_0)
+fit <- sampling(m, data = data,
+                iter = 10000, warmup = 2000,
+                chains = 1) #nCores)
+fit_extr <- extract(fit)
+
+plot(fit_extr$beta[,1], type = 'l')
+coda::effectiveSize(fit_extr$beta)
+```
+
+```{r stan-model4}
+N <- nrow(combined)
+
+# Response
+y <- combined %>%
+  pull(days_open)
+
+# Prior values
+mu_0 <- 0
+tau2_0 <- 1/100
+
+```
+
+```{r}
+# Fit Stan model
+m <- stan_model(model_code = readLines("model4.stan"))
+data <- list(N = N,
+             y = y, 
+             X = X,
+             mu_0 = mu_0,
+             tau2_0 = tau2_0)
+fit <- sampling(m, data = data,
+                iter = 500, warmup = 0,
+                chains = 1) #nCores)
+fit_extr <- extract(fit)
+
+plot(fit_extr$beta[,1], type = 'l')
+coda::effectiveSize(fit_extr$beta)
+
+```
+
+
+
+
+
+```{r shapefile, eval=FALSE}
+library(rgdal)
+library(rgeos) # For tidy() function
+library(broom) #contains tidy() function which converts polygons to data.frame
+
+path <- 'data/SLC_Census_Tracts_2010'
+myShp <- readOGR(dsn = path, layer = 'CensusTracts2010')
+
+myShp@data$id <- rownames(myShp@data) #Assign ID to each polygon
+myShp.df <- tidy(myShp, region = "id") #Convert polygon info to data.frame()
+myShp.df <- merge(myShp.df, myShp@data, by = "id") #Merge data w/polygon data.frame
+
+myShp.df %>%
+  ggplot(aes(x=long, y=lat, group = group)) + 
+  geom_polygon(color="black", fill='gray')
+```
