@@ -21,7 +21,7 @@ set.seed(1122)
 nCores <- parallel::detectCores() - 1
 options(mc.cores = nCores)          # Use all available cores.
 rstan_options(auto_write = TRUE)    # Cache compiled code.
-rstan_options(javascript=FALSE)     # FIXME: Effort to reduce RStudio Stan probs. May be helping.
+rstan_options(javascript = FALSE)     # FIXME: Effort to reduce RStudio Stan probs. May be helping.
 
 # Set ggplot theme
 mytheme <- theme_bw()
@@ -45,9 +45,12 @@ combined <- homeless %>%
   left_join(pop_2019, by = 'tract') %>%
   left_join(inc_2019, by = 'tract') %>%
   left_join(covid, by = 'date') %>%
-  mutate(has_income = ifelse(income <= 0, 0, 1),
-         logincome = ifelse(income <= 0, 0, log(income))) %>%
-  select(id, date, cases_avg7, has_income, district, 
+  # mutate(has_income = ifelse(income <= 0, 0, 1),
+  #        logincome = ifelse(income <= 0, 0, log(income))) %>%
+  # Filter out the 8 observations in the airport tract; no income there
+  filter(tract != 980000) %>%
+  mutate(logincome = log(income)) %>%
+  select(id, date, long, lat, cases_avg7, district, 
          tract, density, logincome, days_open)
   
 
@@ -77,15 +80,15 @@ homeless %>%
 ```
 
 
-```{r}
+```{r request-map}
 # Add request locations on SLC map
 bb <- make_bbox(lon = long, lat = lat, data = homeless)
-mymap <- get_map(location = bb, zoom = 12,
+mymap <- get_map(location = bb, zoom = 11,
                  maptype = "hybrid", source = "google",
                  color = 'bw')
 
 ggmap(mymap) + 
-  geom_point(data = homeless, 
+  geom_point(data = combined, 
              aes(x = long, y = lat, col = district),
              alpha = 1,
              size = 2) +
@@ -93,6 +96,10 @@ ggmap(mymap) +
         axis.ticks = element_blank(),
         axis.title = element_blank()) +
   scale_color_brewer(type = 'qual', palette = 2) +
+  scale_x_continuous(limits = c(min(combined$long)-0.01,
+                                max(combined$long)+0.01)) +
+  scale_y_continuous(limits = c(min(combined$lat)-0.01,
+                                max(combined$lat)+0.01)) +
   labs(col = 'District',
        title = paste0( 'Reports of homelessness concern since ',
                        date(min(covid$date)) ))
@@ -149,17 +156,18 @@ combined %>%
        y = 'log(Days Open)')
 ```
 
-```{r scale-data}
-X <- model.matrix(~ -1 + district + has_income + density + logincome + cases_avg7,
-                  data = combined)
-vars_scaled <- scale(X[,9:11])
-X[,9:11] <- vars_scaled
-y <- combined$days_open
-```
-
 
 
 # Fit Model: GLM
+
+```{r scale-data}
+X <- model.matrix(~ district + density + logincome + cases_avg7,
+                  data = combined)
+contvars_idx <- 8:10
+vars_scaled <- scale(X[,contvars_idx])
+X[,contvars_idx] <- vars_scaled
+y <- combined$days_open
+```
 
 ```{r trad-glm-fit}
 fit <- glm(days_open ~ X - 1,
@@ -181,14 +189,15 @@ loglike <- function(beta) {
 }
 logprior <- function(beta) {
   mu_0 <- 0
-  tau2_0 <- 1/1000
+  tau2_0 <- 1/100
   
-  sum( dnorm(beta, mu_0, 1/tau2_0, log = TRUE) )
+  sum( dnorm(beta, mu_0, sqrt(1/tau2_0), log = TRUE) )
 }
 logpost <- function(beta) {
   loglike(beta) + logprior(beta)
 }
 
+# Stabilize computations of log(posterior) because even the max val is super small
 betahat <- optim(coef(fit), function(beta) -logpost(beta))
 logpost_max <- -betahat$value
 
@@ -199,24 +208,26 @@ logpost_adj <- function(beta) {
 ```
 
 ```{r sample-slice}
-doit <- function(ndraws = 10000, width = rep(1, 11)) {
+doit <- function(ndraws = 10000, width = rep(1, 10)) {
   n_evals <- 0
   f <- function(pars) {
     n_evals <<- n_evals + 1
     logpost_adj(pars)
   }
-  draws <- matrix(0, nrow = ndraws, ncol = 11)
+  draws <- matrix(0, nrow = ndraws, ncol = 10)
   current <- coef(fit) # Start with GLM fit
   f_current <- f(current)
   
   for (i in 1:ndraws) {
-    for (j in 1:11) {
+    for (j in 1:ncol(draws)) {
       # Slice sample beta1
       y_slice <- log(runif(1, 0, exp(f_current)))
       l <- current[j] - runif(1)*width[j]
-      l_prop <- current; l_prop[j] <- l
+      l_prop <- current
+      l_prop[j] <- l
       u <- l + width[j]
-      u_prop <- current; u_prop[j] <- u
+      u_prop <- current
+      u_prop[j] <- u
       
       while (y_slice < f(l_prop)) {
         l <- l - width[j]
@@ -245,13 +256,11 @@ doit <- function(ndraws = 10000, width = rep(1, 11)) {
               evals_per_draw = n_evals/ndraws))
 }
 
-ndraws <- 1e3
-test <- doit(ndraws = ndraws, width = c(0.5, 11))
-
-ess <- floor( c(rep(ndraws, 6), 
-                as.numeric(coda::effectiveSize(test$draws[,7:8]))) )
-names(ess) <- c('Tau1', 'Tau2', 'Tau3', 'Tau4', 'Tau5', 'Tau6',
-                'a', 'b')
+ndraws <- 2e5
+width <- rep(0.08, 10)
+test <- doit(ndraws = ndraws, width = width)
+test$evals_per_draw
+ess <- floor( coda::effectiveSize(test$draws) )
 
 cat('Effective Sample Sizes:\n')
 ess
@@ -390,10 +399,10 @@ tau2_0 <- 1/100
 
 ```{r}
 # Fit Stan model
-m <- stan_model(model_code = readLines("model4.stan"))
+m <- stan_model(model_code = readLines("model5_simple.stan"))
 data <- list(N = N,
              y = y, 
-             X = X,
+             X = X[,1, drop = FALSE],
              mu_0 = mu_0,
              tau2_0 = tau2_0)
 fit <- sampling(m, data = data,
