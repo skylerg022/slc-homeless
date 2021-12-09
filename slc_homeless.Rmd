@@ -208,13 +208,14 @@ logpost_adj <- function(beta) {
 ```
 
 ```{r sample-slice}
-doit <- function(ndraws = 10000, width = rep(1, 10)) {
+doit <- function(ndraws = 10000, width = rep(1, 10), warmup = 1000) {
   n_evals <- 0
   f <- function(pars) {
     n_evals <<- n_evals + 1
     logpost_adj(pars)
   }
   draws <- matrix(0, nrow = ndraws, ncol = 10)
+  current <- rnorm(10, 0, 1)
   current <- coef(fit) # Start with GLM fit
   f_current <- f(current)
   
@@ -252,13 +253,14 @@ doit <- function(ndraws = 10000, width = rep(1, 10)) {
     draws[i,] <- current
   }
   
-  return(list(draws = draws,
+  return(list(draws = draws[-c(1:warmup),],
               evals_per_draw = n_evals/ndraws))
 }
 
-ndraws <- 2e5
+ndraws <- 5e4
+warmup <- 1000
 width <- rep(0.08, 10)
-test <- doit(ndraws = ndraws, width = width)
+test <- doit(ndraws = ndraws, width = width, warmup = warmup)
 test$evals_per_draw
 ess <- floor( coda::effectiveSize(test$draws) )
 
@@ -267,10 +269,20 @@ ess
 
 ```
 
-
 ```{r}
+cbind(colMeans(test$draws),
+      apply(test$draws, 2, 
+            function(x) quantile(x, c(0.025, 0.975))) %>%
+        t())
+```
+
+
+```{r metropolis, eval=FALSE}
+# Rookie implementation of Metropolis algorithm
+#  NOT efficient; slice sampler works much better
+
 ndraws <- 10000
-nbetas <- 11
+nbetas <- 10
 accept <- 0
 draws <- matrix(0, nrow = ndraws, ncol = nbetas)
 state <- rep(0.5, nbetas)
@@ -289,130 +301,35 @@ coda::effectiveSize(draws)
 ```
 
 
-
-
 # Fit Model: Stan
 
-```{r stan-data-model2}
-# Need
-# vector of sample sizes for all 7 districts
-# matrix (7 x maxN) of days open (RESPONSE VARIABLE)
-# matrix (7 x maxN) of 7-day rolling average of COVID cases
-
-# Sample sizes
-districtN <- homeless %>% 
-  group_by(district) %>% 
-  summarize(n = n()) %>%
-  pull(n)
-districts <- length(districtN)
-maxN <- max(districtN)
-
-# Response
-y <- homeless %>%
-  left_join(covid, by = 'date') %>%
-  arrange(district, date) %>%
-  group_by(district) %>%
-  mutate(obs_num = row_number()) %>%
-  ungroup() %>%
-  select(obs_num, district, days_open) %>%
-  pivot_wider(id_cols = c(obs_num, district),
-              names_from = obs_num,
-              values_from = days_open) %>%
-  select(-district) %>%
-  as.matrix()
-y[is.na(y)] <- 1e3
-
-# Covid cases
-x <- homeless %>%
-  left_join(covid, by = 'date') %>%
-  arrange(district, date) %>%
-  group_by(district) %>%
-  mutate(obs_num = row_number()) %>%
-  ungroup() %>%
-  select(obs_num, district, cases_avg7) %>%
-  pivot_wider(id_cols = c(obs_num, district),
-              names_from = obs_num,
-              values_from = cases_avg7) %>%
-  select(-district) %>%
-  as.matrix()
-x[is.na(x)] <- 1e3
-
-# Prior values
-mu_0 <- 0
-tau2_0 <- 1/100
-```
-
-```{r stan-data-model3}
-
-N <- nrow(homeless)
-districtN <- homeless %>% 
-  group_by(district) %>% 
-  summarize(n = n()) %>%
-  pull(n)
-districts <- length(districtN)
-
-# Response
-y <- homeless %>%
-  pull(days_open)
-
-# Covid cases
-x <- model.matrix(~ -1 + district + cases_avg7,
-             data = homeless %>%
-               left_join(covid, by = 'date'))
-
-# Prior values
-mu_0 <- 2
-tau2_0 <- 1/1000
-```
-
-
-```{r stan-fit}
-# Fit Stan model
-m <- stan_model(model_code = readLines("model3.stan"))
-data <- list(districts = districts,
-             N = N,
-             y = y, 
-             x = x,
-             mu_0 = mu_0,
-             tau2_0 = tau2_0)
-fit <- sampling(m, data = data,
-                iter = 10000, warmup = 2000,
-                chains = 1) #nCores)
-fit_extr <- extract(fit)
-
-plot(fit_extr$beta[,1], type = 'l')
-coda::effectiveSize(fit_extr$beta)
-```
-
-```{r stan-model4}
+```{r stan-model}
 N <- nrow(combined)
 
-# Response
-y <- combined %>%
-  pull(days_open)
-
 # Prior values
 mu_0 <- 0
 tau2_0 <- 1/100
 
-```
-
-```{r}
 # Fit Stan model
-m <- stan_model(model_code = readLines("model5_simple.stan"))
+m <- stan_model(model_code = readLines("model.stan"))
 data <- list(N = N,
              y = y, 
-             X = X[,1, drop = FALSE],
+             X = X,
              mu_0 = mu_0,
              tau2_0 = tau2_0)
-fit <- sampling(m, data = data,
-                iter = 500, warmup = 0,
-                chains = 1) #nCores)
-fit_extr <- extract(fit)
+fit_stan <- sampling(m, data = data,
+                     iter = 10000, warmup = 1000, # MUST HAVE WARMUP > 9(?)
+                     chains = nCores)
+```
+
+
+```{r stan-model-diagnostics}
+fit_extr <- extract(fit_stan)
+
+print(fit_stan, probs = c(0.05, 0.95))
 
 plot(fit_extr$beta[,1], type = 'l')
 coda::effectiveSize(fit_extr$beta)
-
 ```
 
 
