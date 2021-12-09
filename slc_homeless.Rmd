@@ -12,6 +12,8 @@ library(ggmap)
 library(tidyverse)
 library(lubridate)
 library(flextable)
+library(kableExtra)
+library(cowplot)
 library(rstan)
 
 # Set random seed
@@ -26,10 +28,17 @@ rstan_options(javascript = FALSE)     # FIXME: Effort to reduce RStudio Stan pro
 # Set ggplot theme
 mytheme <- theme_bw()
 theme_set(mytheme)
+
+# Picture saving settings
+pic_width <- 7
+pic_height <- 4
+pic_unit <- 'in'
 ```
 
 ```{r read-data}
 covid <- read_csv('data/covid19_cases_saltlakecounty.csv')
+homeless_init <- read_csv('data/slc_homeless_only_locations.csv') %>%
+  mutate(district = as.character(district))
 homeless <- read_csv('data/homeless_requests.csv',
                      col_types = cols(district = col_character())) %>%
   select(-date_closed) %>%
@@ -58,6 +67,87 @@ combined <- homeless %>%
 ```
 
 
+# Introduction
+
+```{r request-map}
+# Add request locations on SLC map
+bb <- make_bbox(lon = long, lat = lat, data = homeless)
+mymap <- get_map(location = bb, zoom = 11,
+                 maptype = "hybrid", source = "google",
+                 color = 'bw')
+
+# Unfiltered homelessness report map
+p <- ggmap(mymap) + 
+  geom_point(data = homeless_init, 
+             aes(x = long, y = lat, col = district),
+             alpha = 0.6,
+             size = 2) +
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank()) +
+  scale_color_brewer(type = 'qual', palette = 2) +
+  scale_x_continuous(limits = c(min(homeless_init$long)-0.001,
+                                max(homeless_init$long)+0.001)) +
+  scale_y_continuous(limits = c(min(homeless_init$lat)-0.001,
+                                max(homeless_init$lat)+0.001)) +
+  labs(col = 'District',
+       title = paste0( 'Reports of homelessness concern since ',
+                       date(min(covid$date)) ))
+
+ggsave('plots/reports_map.png',
+       plot = p,
+       device = 'png',
+       dpi = 300,
+       width = pic_width, 
+       height = pic_height,
+       units = pic_unit)
+
+# Filtered (data used for the analysis) homelessness report map
+p <- ggmap(mymap) + 
+  geom_point(data = homeless, 
+             aes(x = long, y = lat, col = district),
+             alpha = 0.6,
+             size = 2) +
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank()) +
+  scale_color_brewer(type = 'qual', palette = 2) +
+  scale_x_continuous(limits = c(min(homeless$long)-0.001,
+                                max(homeless$long)+0.001)) +
+  scale_y_continuous(limits = c(min(homeless$lat)-0.001,
+                                max(homeless$lat)+0.001)) +
+  labs(col = 'District',
+       title = paste0( 'Reports of homelessness concern since ',
+                       date(min(covid$date)) ))
+
+ggsave('plots/reports_map_filtered.png',
+       plot = p,
+       device = 'png',
+       dpi = 300,
+       width = pic_width, 
+       height = pic_height,
+       units = pic_unit)
+
+```
+
+
+# The Data
+
+```{r}
+combined %>%
+  select(district, cases_avg7, density, logincome, days_open) %>%
+  mutate(across(cases_avg7:logincome, function(x) round(x, 1))) %>%
+  flextable() %>%
+  set_header_labels(district = 'District',
+                    cases_avg7 = 'Average New COVID Cases',
+                    density = 'Population Density',
+                    logincome = 'Log(Median Household Income)',
+                    days_open = 'Days Open') %>%
+  autofit() %>%
+  theme_zebra()
+```
+
+
 # Exploratory Data Analysis
 
 ```{r inside-analysis, eval=FALSE}
@@ -69,70 +159,38 @@ homeless %>%
             min_date = min(date)) %>%
   arrange(neighborhood) %>%
   View()
-
-# Keep in districts
-homeless %>%
-  group_by(district) %>%
-  summarize(n = n(),
-            avg_date = mean(date),
-            min_date = min(date)) %>%
-  View()
 ```
 
-
-```{r request-map}
-# Add request locations on SLC map
-bb <- make_bbox(lon = long, lat = lat, data = homeless)
-mymap <- get_map(location = bb, zoom = 11,
-                 maptype = "hybrid", source = "google",
-                 color = 'bw')
-
-ggmap(mymap) + 
-  geom_point(data = combined, 
-             aes(x = long, y = lat, col = district),
-             alpha = 1,
-             size = 2) +
-  theme(axis.text = element_blank(),
-        axis.ticks = element_blank(),
-        axis.title = element_blank()) +
-  scale_color_brewer(type = 'qual', palette = 2) +
-  scale_x_continuous(limits = c(min(combined$long)-0.01,
-                                max(combined$long)+0.01)) +
-  scale_y_continuous(limits = c(min(combined$lat)-0.01,
-                                max(combined$lat)+0.01)) +
-  labs(col = 'District',
-       title = paste0( 'Reports of homelessness concern since ',
-                       date(min(covid$date)) ))
-```
-
-
-```{r}
+```{r sample-size-mean-days}
 combined %>%
   group_by(district) %>%
   summarize(n = n(),
-            days_open = mean(days_open))
-  # mutate(days_open_adj = days_open / (mean_density/1000))
-
-# Does it make more sense to divide by population or multiply by it?
+            days_open = mean(days_open) %>%
+              round(2)) %>%
+  flextable() %>%
+  set_header_labels(district = 'District',
+                    days_open = 'Days Open') %>%
+  autofit() %>%
+  theme_zebra()
 ```
 
-```{r}
-combined %>%
+```{r eda-plots}
+p <- combined %>%
   ggplot(aes(days_open)) +
   geom_density() +
   labs(x = 'Days Open', y = 'Density')
 
-combined %>%
-  ggplot(aes(date, days_open)) +
+p1 <- combined %>%
+  ggplot(aes(date, log(days_open))) +
   geom_jitter(alpha = 0.5) +
-  labs(x = 'Date', y = 'Days Open')
+  labs(x = 'Date', y = 'log(Days Open)')
 
-combined %>%
+p2 <- combined %>%
   ggplot(aes(district, log(days_open))) +
   geom_boxplot() +
   labs(x = 'District', y = 'log(Days Open)')
 
-combined %>%
+p3 <- combined %>%
   ggplot(aes(cases_avg7, log(days_open))) +
   geom_point(alpha = 0.5) +
   geom_smooth(method = 'lm',
@@ -140,20 +198,47 @@ combined %>%
   labs(x = 'New COVID Cases (Rolling 7-Day Avg)',
        y = 'log(Days Open)')
 
-combined %>%
+p4 <- combined %>%
   ggplot(aes(logincome, log(days_open))) +
   geom_point(alpha = 0.5) +
   geom_smooth(method = 'lm',
               se = FALSE) +
   labs(x = 'log(Income)', y = 'log(Days Open)')
 
-combined %>%
+p5 <- combined %>%
   ggplot(aes(density, log(days_open))) +
   geom_point(alpha = 0.5) +
   geom_smooth(method = 'lm',
               se = FALSE) +
   labs(x = 'Population Density (Pop per Sq. Mile)',
        y = 'log(Days Open)')
+
+# Save plots
+plot_grid(p1, p3, p4, p5, 
+          nrow = 2, byrow = TRUE) %>%
+  ggsave(filename = 'plots/eda_cont_predictors.png',
+         plot = .,
+         device = 'png',
+         dpi = 300,
+         width = pic_width, 
+         height = pic_height,
+         units = pic_unit)
+
+ggsave('plots/eda_days_density.png',
+       plot = p,
+       device = 'png',
+       dpi = 300,
+       width = pic_width, 
+       height = pic_height,
+       units = pic_unit)
+
+ggsave('plots/eda_days_districts.png',
+       plot = p2,
+       device = 'png',
+       dpi = 300,
+       width = pic_width, 
+       height = pic_height,
+       units = pic_unit)
 ```
 
 
@@ -318,8 +403,10 @@ data <- list(N = N,
              mu_0 = mu_0,
              tau2_0 = tau2_0)
 fit_stan <- sampling(m, data = data,
-                     iter = 10000, warmup = 1000, # MUST HAVE WARMUP > 9(?)
-                     chains = nCores)
+                     iter = 5000, warmup = 1000,
+                     chains = 1)
+                     # iter = 10000, warmup = 1000, # MUST HAVE WARMUP > 9(?)
+                     # chains = nCores)
 ```
 
 
@@ -332,6 +419,54 @@ plot(fit_extr$beta[,1], type = 'l')
 coda::effectiveSize(fit_extr$beta)
 ```
 
+```{r}
+beta <- fit_extr$beta
+
+# Pairwise comparisons
+significant <- matrix(0, nrow = 7, ncol = 7)
+ci <- apply(beta[,c(2:7)], 2, function(x) quantile(x, c(0.025, 0.975)))
+significant[1, c(2:7)] <- ifelse(ci[1,] * ci[2,] > 0, 1, 0)
+significant[c(2:7), 1] <- ifelse(ci[1,] * ci[2,] > 0, 1, 0)
+for (i in 2:6) {
+  for (j in (i+1):7) {
+    ci <- quantile(beta[,i] - beta[,j], c(0.025, 0.975))
+    sig <- ifelse(ci[1] * ci[2] > 0, 1, 0)
+    significant[i, j] <- sig
+    significant[j, i] <- sig
+  }
+}
+significant
+
+# Plot district effects
+beta_districts <- beta[,1:7]
+for (j in 2:7) {
+  beta_districts[,j] <- beta_districts[,1] + beta_districts[,j]
+}
+est <- colMeans(beta_districts)
+ci <- apply(beta_districts, 2, function(x) quantile(x, c(0.025, 0.975)))
+lwr <- ci[1,]
+upr <- ci[2,]
+
+beta_districts <- data.frame(district = as.character(1:7),
+                             est = exp(est),
+                             lwr = exp(lwr),
+                             upr = exp(upr))
+p <- beta_districts %>%
+  ggplot(aes(district, est, ymin = lwr, ymax = upr)) +
+  geom_point() +
+  geom_errorbar() +
+  labs(x = 'District',
+       y = 'Mean Days Request is Open',
+       title = 'Posterior mean and credible interval estimates')
+
+ggsave('plots/post_district_ci.png',
+       plot = p,
+       device = 'png',
+       dpi = 300,
+       width = pic_width, 
+       height = pic_height,
+       units = pic_unit)
+```
 
 
 

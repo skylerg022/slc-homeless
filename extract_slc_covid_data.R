@@ -11,9 +11,10 @@ library(rgeos) # For tidy() function
 library(broom) #contains tidy() function which converts polygons to data.frame
 
 
-# Set working directory
-setwd("C:/Users/skyle/Dropbox/2021 Fall/651/project")
-
+# set working directory if necessary
+if (rstudioapi::isAvailable()) {
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+}
 
 # Clean/extract Salt Lake county COVID data -------------------------------
 
@@ -138,6 +139,11 @@ homeless <- read_csv('data/Service_Request_SLCMobile_Homeless.csv',
          district = ifelse(neighborhood == 'Sugar House' & is.na(district),
                            '7', district)) %>%
   select(-c(date_updated, request_type:device_type))
+
+# Write only location report data
+homeless %>%
+  select(id, district, lat, long) %>%
+  write_csv('data/slc_homeless_only_locations.csv')
 
 # CLEANING OUT DATA THAT MAY NOT PROVIDE INSIGHT
 # Filter out days with 5 or more requests closed within 3 min. intervals
