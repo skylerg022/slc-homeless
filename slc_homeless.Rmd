@@ -5,8 +5,8 @@ date: "November 9, 2021"
 output: word_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE)
 
 library(ggmap)
 library(tidyverse)
@@ -23,7 +23,7 @@ set.seed(1122)
 nCores <- parallel::detectCores() - 1
 options(mc.cores = nCores)          # Use all available cores.
 rstan_options(auto_write = TRUE)    # Cache compiled code.
-rstan_options(javascript = FALSE)     # FIXME: Effort to reduce RStudio Stan probs. May be helping.
+rstan_options(javascript = FALSE)
 
 # Set ggplot theme
 mytheme <- theme_bw()
@@ -36,34 +36,34 @@ pic_unit <- 'in'
 ```
 
 ```{r read-data}
+# COVID-19 county new cases data
 covid <- read_csv('data/covid19_cases_saltlakecounty.csv')
+
+# Unfiltered homeless data; for plotting only
 homeless_init <- read_csv('data/slc_homeless_only_locations.csv') %>%
   mutate(district = as.character(district))
+# Filtered homeless data; for analysis
 homeless <- read_csv('data/homeless_requests.csv',
                      col_types = cols(district = col_character())) %>%
   select(-date_closed) %>%
   rename(date = date_created)
+
+# 2010 Census tract data 
 pop_2019 <- read_csv('data/slc_population_2019_est_tracts.csv') %>%
   select(-map_code)
 inc_2019 <- read_csv('data/slc_income_2019_est_tracts.csv') %>%
   select(-map_code)
-# pop <- read_csv('data/slc_population_2019_est.csv',
-#                 col_types = cols(district = col_character()))
 
+# Combine all data together
 combined <- homeless %>%
   left_join(pop_2019, by = 'tract') %>%
   left_join(inc_2019, by = 'tract') %>%
   left_join(covid, by = 'date') %>%
-  # mutate(has_income = ifelse(income <= 0, 0, 1),
-  #        logincome = ifelse(income <= 0, 0, log(income))) %>%
   # Filter out the 8 observations in the airport tract; no income there
   filter(tract != 980000) %>%
   mutate(logincome = log(income)) %>%
   select(id, date, long, lat, cases_avg7, district, 
          tract, density, logincome, days_open)
-  
-
-# rm(covid, homeless, inc_2019, pop_2019)
 ```
 
 
@@ -90,9 +90,7 @@ p <- ggmap(mymap) +
                                 max(homeless_init$long)+0.001)) +
   scale_y_continuous(limits = c(min(homeless_init$lat)-0.001,
                                 max(homeless_init$lat)+0.001)) +
-  labs(col = 'District',
-       title = paste0( 'Reports of homelessness concern since ',
-                       date(min(covid$date)) ))
+  labs(col = 'District')
 
 ggsave('plots/reports_map.png',
        plot = p,
@@ -116,9 +114,7 @@ p <- ggmap(mymap) +
                                 max(homeless$long)+0.001)) +
   scale_y_continuous(limits = c(min(homeless$lat)-0.001,
                                 max(homeless$lat)+0.001)) +
-  labs(col = 'District',
-       title = paste0( 'Reports of homelessness concern since ',
-                       date(min(covid$date)) ))
+  labs(col = 'District')
 
 ggsave('plots/reports_map_filtered.png',
        plot = p,
@@ -127,7 +123,6 @@ ggsave('plots/reports_map_filtered.png',
        width = pic_width, 
        height = pic_height,
        units = pic_unit)
-
 ```
 
 
@@ -137,6 +132,7 @@ ggsave('plots/reports_map_filtered.png',
 combined %>%
   select(district, cases_avg7, density, logincome, days_open) %>%
   mutate(across(cases_avg7:logincome, function(x) round(x, 1))) %>%
+  head(4) %>%
   flextable() %>%
   set_header_labels(district = 'District',
                     cases_avg7 = 'Average New COVID Cases',
@@ -177,7 +173,7 @@ combined %>%
 ```{r eda-plots}
 p <- combined %>%
   ggplot(aes(days_open)) +
-  geom_density() +
+  geom_histogram() +
   labs(x = 'Days Open', y = 'Density')
 
 p1 <- combined %>%
@@ -224,7 +220,7 @@ plot_grid(p1, p3, p4, p5,
          height = pic_height,
          units = pic_unit)
 
-ggsave('plots/eda_days_density.png',
+ggsave('plots/eda_days_histogram.png',
        plot = p,
        device = 'png',
        dpi = 300,
@@ -242,7 +238,6 @@ ggsave('plots/eda_days_districts.png',
 ```
 
 
-
 # Fit Model: GLM
 
 ```{r scale-data}
@@ -258,15 +253,10 @@ y <- combined$days_open
 fit <- glm(days_open ~ X - 1,
            data = combined,
            family = poisson)
-summary(fit)
-confint(fit) %>%
-  round(3)
 ```
 
 
-
-
-# Fit Model: MCMC Metropolis Hastings
+# Fit Model: Slice Sampler
 
 ```{r}
 loglike <- function(beta) {
@@ -300,7 +290,6 @@ doit <- function(ndraws = 10000, width = rep(1, 10), warmup = 1000) {
     logpost_adj(pars)
   }
   draws <- matrix(0, nrow = ndraws, ncol = 10)
-  current <- rnorm(10, 0, 1)
   current <- coef(fit) # Start with GLM fit
   f_current <- f(current)
   
@@ -342,48 +331,55 @@ doit <- function(ndraws = 10000, width = rep(1, 10), warmup = 1000) {
               evals_per_draw = n_evals/ndraws))
 }
 
-ndraws <- 5e4
+ndraws <- 1e4
 warmup <- 1000
 width <- rep(0.08, 10)
-test <- doit(ndraws = ndraws, width = width, warmup = warmup)
-test$evals_per_draw
-ess <- floor( coda::effectiveSize(test$draws) )
+mychains <- 4
+test <- replicate(mychains, 
+                  doit(ndraws = ndraws, width = width, warmup = warmup)$draws,
+                  simplify = FALSE)
 
-cat('Effective Sample Sizes:\n')
-ess
+# Thin
+thin_idx <- seq(4, mychains*(ndraws-warmup), by = 4)
+draws <- do.call(rbind, test) %>%
+  .[thin_idx,]
 
+ess <- floor( coda::effectiveSize(draws) )
+
+rhat <- numeric(10)
+mydraws <- matrix(0, nrow = (ndraws-warmup)/mychains, ncol = mychains)
+for (i in 1:10) {
+  for (j in 0:3) {
+    mydraws[,j] <- draws[( j*(ndraws-warmup)/mychains + 1 ):( (j+1)*(ndraws-warmup)/mychains ), i]
+  }
+  rhat[i] <- Rhat(mydraws)
+}
 ```
 
 ```{r}
-cbind(colMeans(test$draws),
-      apply(test$draws, 2, 
-            function(x) quantile(x, c(0.025, 0.975))) %>%
-        t())
+coef_names <- colnames(X)
+tbl_slice <- data.frame(coef = coef_names,
+                   est = colMeans(draws),
+                   apply(draws, 2, 
+                         function(x) quantile(x, c(0.025, 0.975))) %>%
+                     t(),
+                   ESS = ess,
+                   rhat = rhat)
+
+# Rescale continuous betas
+col_idx <- 2:4
+sds <- attr(vars_scaled, 'scaled:scale')
+tbl_slice[8, col_idx] <- tbl_slice[8, col_idx] / sds[1] * 1000
+tbl_slice[9, col_idx] <- tbl_slice[9, col_idx] / sds[2]
+tbl_slice[10, col_idx] <- tbl_slice[10, col_idx] / sds[3]
+tbl_slice[,2:6] <- round(tbl_slice[,2:6], 4)
+
+tbl_slice %>%
+  flextable() %>%
+  autofit() %>%
+  theme_zebra()
 ```
 
-
-```{r metropolis, eval=FALSE}
-# Rookie implementation of Metropolis algorithm
-#  NOT efficient; slice sampler works much better
-
-ndraws <- 10000
-nbetas <- 10
-accept <- 0
-draws <- matrix(0, nrow = ndraws, ncol = nbetas)
-state <- rep(0.5, nbetas)
-for (i in 1:ndraws) {
-  proposal <- state + rnorm(nbetas, 0, 0.1)
-  metropolis <- logpost(proposal) - logpost(state)
-  if (log(runif(1)) < metropolis) {
-    draws[i,] <- proposal
-    state <- proposal
-    accept <- accept + 1
-  } else draws[i,] <- state
-}
-plot(draws[,4], type = 'l')
-accept
-coda::effectiveSize(draws)
-```
 
 
 # Fit Model: Stan
@@ -403,40 +399,40 @@ data <- list(N = N,
              mu_0 = mu_0,
              tau2_0 = tau2_0)
 fit_stan <- sampling(m, data = data,
-                     iter = 5000, warmup = 1000,
-                     chains = 1)
-                     # iter = 10000, warmup = 1000, # MUST HAVE WARMUP > 9(?)
-                     # chains = nCores)
+                     iter = 10000, warmup = 1000,
+                     chains = nCores)
 ```
 
 
 ```{r stan-model-diagnostics}
-fit_extr <- extract(fit_stan)
+# Extract beta samples
+beta <- extract(fit_stan)$beta
 
 print(fit_stan, probs = c(0.05, 0.95))
 
-plot(fit_extr$beta[,1], type = 'l')
-coda::effectiveSize(fit_extr$beta)
+Index <- 1:nrow(beta)
+p1 <- ggplot(mapping = aes(Index, beta[,1])) +
+  geom_line()
+p2 <- ggplot(mapping = aes(Index, beta[,2])) +
+  geom_line()
+p3 <- ggplot(mapping = aes(Index, beta[,8])) +
+  geom_line()
+p4 <- ggplot(mapping = aes(Index, beta[,10])) +
+  geom_line()
+
+# Save plots
+plot_grid(p1, p2, p3, p4, 
+          nrow = 2, byrow = TRUE) %>%
+  ggsave(filename = 'plots/results_trace.png',
+         plot = .,
+         device = 'png',
+         dpi = 300,
+         width = pic_width, 
+         height = pic_height,
+         units = pic_unit)
 ```
 
-```{r}
-beta <- fit_extr$beta
-
-# Pairwise comparisons
-significant <- matrix(0, nrow = 7, ncol = 7)
-ci <- apply(beta[,c(2:7)], 2, function(x) quantile(x, c(0.025, 0.975)))
-significant[1, c(2:7)] <- ifelse(ci[1,] * ci[2,] > 0, 1, 0)
-significant[c(2:7), 1] <- ifelse(ci[1,] * ci[2,] > 0, 1, 0)
-for (i in 2:6) {
-  for (j in (i+1):7) {
-    ci <- quantile(beta[,i] - beta[,j], c(0.025, 0.975))
-    sig <- ifelse(ci[1] * ci[2] > 0, 1, 0)
-    significant[i, j] <- sig
-    significant[j, i] <- sig
-  }
-}
-significant
-
+```{r analysis-districts}
 # Plot district effects
 beta_districts <- beta[,1:7]
 for (j in 2:7) {
@@ -468,8 +464,36 @@ ggsave('plots/post_district_ci.png',
        units = pic_unit)
 ```
 
+```{r}
+coef_names <- colnames(X)
+tbl_stan <- data.frame(coef = coef_names,
+                   est = colMeans(beta),
+                   apply(beta, 2, 
+                         function(x) quantile(x, c(0.025, 0.975))) %>%
+                     t(),
+                   ESS = coda::effectiveSize(beta) %>%
+                     round(),
+                   rhat = Rhat(beta))
+
+# Rescale continuous betas
+col_idx <- 2:4
+sds <- attr(vars_scaled, 'scaled:scale')
+tbl_stan[8, col_idx] <- tbl_stan[8, col_idx] / sds[1] * 1000
+tbl_stan[9, col_idx] <- tbl_stan[9, col_idx] / sds[2]
+tbl_stan[10, col_idx] <- tbl_stan[10, col_idx] / sds[3]
+tbl_stan[,2:6] <- round(tbl_stan[,2:6], 4)
+
+tbl_stan %>%
+  flextable() %>%
+  autofit() %>%
+  theme_zebra()
+```
 
 
+
+# Extras
+
+## SLC Shapefile Data
 
 ```{r shapefile, eval=FALSE}
 library(rgdal)
@@ -486,4 +510,29 @@ myShp.df <- merge(myShp.df, myShp@data, by = "id") #Merge data w/polygon data.fr
 myShp.df %>%
   ggplot(aes(x=long, y=lat, group = group)) + 
   geom_polygon(color="black", fill='gray')
+```
+
+## MH Algorithm
+
+```{r metropolis, eval=FALSE}
+# Rookie implementation of Metropolis algorithm
+#  NOT efficient; slice sampler works much better
+
+ndraws <- 10000
+nbetas <- 10
+accept <- 0
+draws <- matrix(0, nrow = ndraws, ncol = nbetas)
+state <- rep(0.5, nbetas)
+for (i in 1:ndraws) {
+  proposal <- state + rnorm(nbetas, 0, 0.1)
+  metropolis <- logpost(proposal) - logpost(state)
+  if (log(runif(1)) < metropolis) {
+    draws[i,] <- proposal
+    state <- proposal
+    accept <- accept + 1
+  } else draws[i,] <- state
+}
+plot(draws[,4], type = 'l')
+accept
+coda::effectiveSize(draws)
 ```

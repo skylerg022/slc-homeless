@@ -16,6 +16,10 @@ if (rstudioapi::isAvailable()) {
   setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 }
 
+pic_width <- 7
+pic_height <- 4
+pic_unit <- 'in'
+
 # Clean/extract Salt Lake county COVID data -------------------------------
 
 covid <- read_csv('data/time_series_covid19_confirmed_US.txt') %>%
@@ -140,6 +144,14 @@ homeless <- read_csv('data/Service_Request_SLCMobile_Homeless.csv',
                            '7', district)) %>%
   select(-c(date_updated, request_type:device_type))
 
+# Save ggplot of unfiltered data
+p1 <- homeless %>%
+  ggplot(aes(date_created, date_closed)) +
+  geom_point(alpha = 0.3) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) +
+  labs(x = 'Date Created', y = 'Date Closed')
+
 # Write only location report data
 homeless %>%
   select(id, district, lat, long) %>%
@@ -176,6 +188,24 @@ homeless2 <- homeless %>%
           !(date_closed %in% date(crazy_close_days)) ) %>%
   filter(date_closed != '2020-12-29') %>%
   select(-min_from_last_close)
+
+# Save filtered data visualization
+p2 <- homeless2 %>%
+  ggplot(aes(date_created, date_closed)) +
+  geom_point(alpha = 0.3) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) +
+  labs(x = 'Date Created', y = 'Date Closed')
+
+cowplot::plot_grid(p1, p2, nrow = 1) %>%
+  ggsave(filename = 'plots/data_openclose.png',
+         plot = .,
+         device = 'png',
+         dpi = 300,
+         width = pic_width, 
+         height = pic_height,
+         units = pic_unit)
+
 
 # Add tract of report
 report_loc <- SpatialPoints(homeless2 %>%
